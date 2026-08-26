@@ -1,0 +1,81 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid()) @map("_id")
+  name          String
+  email         String         @unique
+  password      String
+  userType      UserType
+  refreshTokens RefreshToken[]
+  categories    Category[]
+  transactions  Transaction[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid()) @map("_id")
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model Category {
+  id           String        @id @default(cuid()) @map("_id")
+  name         String
+  type         CategoryType
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([userId])
+  @@unique([userId, name, type])
+}
+
+model Transaction {
+  id         String       @id @default(cuid()) @map("_id")
+  amount     Float
+  note       String?
+  type       CategoryType
+  date       DateTime
+  categoryId String
+  category   Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([userId, date])
+  @@index([categoryId])
+}
+
+enum UserType {
+  ADMIN
+  CUSTOMER
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+  SAVING
+  INVESTMENT
+}
