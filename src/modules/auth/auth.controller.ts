@@ -1,8 +1,30 @@
 import type { Request, Response, NextFunction } from "express";
 import * as authService from "./auth.service.js";
-import { loginSchema, signupSchema } from "./auth.validation.js";
+import { loginSchema, refreshTokenBodySchema, signupSchema } from "./auth.validation.js";
 import { REFRESH_TOKEN_COOKIE, clearRefreshTokenCookie, setRefreshTokenCookie } from "../../utils/cookies.js";
 import { AppError } from "../../utils/errors.js";
+
+function getRefreshToken(req: Request): string | null {
+  const cookieToken = req.cookies[REFRESH_TOKEN_COOKIE];
+  if (typeof cookieToken === "string" && cookieToken.length > 0) {
+    return cookieToken;
+  }
+
+  const bodyToken = req.body?.refreshToken;
+  if (typeof bodyToken === "string" && bodyToken.length > 0) {
+    return bodyToken;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    const bearerToken = authHeader.slice(7).trim();
+    if (bearerToken.length > 0) {
+      return bearerToken;
+    }
+  }
+
+  return null;
+}
 
 export async function signup(
   req: Request,
@@ -17,6 +39,7 @@ export async function signup(
 
     res.status(201).json({
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       user: result.user,
     });
   } catch (error) {
@@ -37,6 +60,7 @@ export async function login(
 
     res.status(200).json({
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       user: result.user,
     });
   } catch (error) {
@@ -50,9 +74,10 @@ export async function refresh(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
+    refreshTokenBodySchema.parse(req.body ?? {});
+    const refreshToken = getRefreshToken(req);
 
-    if (!refreshToken || typeof refreshToken !== "string") {
+    if (!refreshToken) {
       throw new AppError(401, "Refresh token missing");
     }
 
@@ -62,6 +87,7 @@ export async function refresh(
 
     res.status(200).json({
       accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
       user: result.user,
     });
   } catch (error) {
@@ -75,9 +101,10 @@ export async function logout(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const refreshToken = req.cookies[REFRESH_TOKEN_COOKIE];
+    refreshTokenBodySchema.parse(req.body ?? {});
+    const refreshToken = getRefreshToken(req);
 
-    if (typeof refreshToken === "string") {
+    if (refreshToken) {
       await authService.logout(refreshToken);
     }
 
