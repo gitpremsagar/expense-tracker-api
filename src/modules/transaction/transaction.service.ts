@@ -37,18 +37,21 @@ export async function createTransaction(userId: string, input: CreateTransaction
 }
 
 export async function listTransactions(userId: string, query: ListTransactionsInput) {
-  const { month, type, categoryId, page, limit } = query;
+  const { month, year, type, categoryId, page, limit } = query;
 
   type DateFilter = { gte: Date; lt: Date } | undefined;
   let dateFilter: DateFilter;
 
   if (month) {
     const parts = month.split("-");
-    const year = parseInt(parts[0] ?? "0", 10);
+    const yearNum = parseInt(parts[0] ?? "0", 10);
     const mon = parseInt(parts[1] ?? "1", 10);
-    const start = new Date(year, mon - 1, 1);
-    const end = new Date(year, mon, 1);
+    const start = new Date(yearNum, mon - 1, 1);
+    const end = new Date(yearNum, mon, 1);
     dateFilter = { gte: start, lt: end };
+  } else if (year) {
+    const yearNum = parseInt(year, 10);
+    dateFilter = { gte: new Date(yearNum, 0, 1), lt: new Date(yearNum + 1, 0, 1) };
   }
 
   const where = {

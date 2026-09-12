@@ -7,5 +7,6 @@ const router = Router();
 router.use(authenticate);
 
 router.get("/monthly", reportController.monthly);
+router.get("/annual", reportController.annual);
 
 export default router;

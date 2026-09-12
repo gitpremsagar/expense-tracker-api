@@ -12,10 +12,27 @@ const monthlyQuerySchema = z.object({
     }),
 });
 
+const annualQuerySchema = z.object({
+  year: z
+    .string()
+    .regex(/^\d{4}$/, "year must be in YYYY format")
+    .default(() => String(new Date().getFullYear())),
+});
+
 export async function monthly(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { month } = monthlyQuerySchema.parse(req.query);
     const report = await reportService.getMonthlyReport(req.user!.id, month);
+    res.status(200).json({ report });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function annual(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { year } = annualQuerySchema.parse(req.query);
+    const report = await reportService.getAnnualReport(req.user!.id, parseInt(year, 10));
     res.status(200).json({ report });
   } catch (error) {
     next(error);

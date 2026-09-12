@@ -19,6 +19,10 @@ export const listTransactionsSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}$/, "month must be in YYYY-MM format")
     .optional(),
+  year: z
+    .string()
+    .regex(/^\d{4}$/, "year must be in YYYY format")
+    .optional(),
   type: z.enum(["INCOME", "EXPENSE", "SAVING", "INVESTMENT"]).optional(),
   categoryId: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
