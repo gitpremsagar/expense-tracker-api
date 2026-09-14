@@ -19,6 +19,7 @@ model User {
   refreshTokens RefreshToken[]
   categories    Category[]
   transactions  Transaction[]
+  debts         Debt[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -78,4 +79,27 @@ enum CategoryType {
   EXPENSE
   SAVING
   INVESTMENT
+}
+
+enum DebtType {
+  TAKEN
+  GIVEN
+}
+
+model Debt {
+  id          String   @id @default(cuid()) @map("_id")
+  type        DebtType
+  partyName   String
+  amount      Float
+  description String?
+  date        DateTime
+  status      String
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([userId, type])
 }

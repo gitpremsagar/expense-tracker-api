@@ -6,6 +6,7 @@ import authRoutes from "./modules/auth/auth.routes.js";
 import categoryRoutes from "./modules/category/category.routes.js";
 import transactionRoutes from "./modules/transaction/transaction.routes.js";
 import reportRoutes from "./modules/report/report.routes.js";
+import debtRoutes from "./modules/debt/debt.routes.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { prisma } from "./lib/prisma.js";
@@ -33,6 +34,7 @@ app.use("/auth", authRoutes);
 app.use("/categories", categoryRoutes);
 app.use("/transactions", transactionRoutes);
 app.use("/reports", reportRoutes);
+app.use("/debts", debtRoutes);
 
 app.use(errorHandler);
 
