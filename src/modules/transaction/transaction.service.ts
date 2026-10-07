@@ -37,12 +37,17 @@ export async function createTransaction(userId: string, input: CreateTransaction
 }
 
 export async function listTransactions(userId: string, query: ListTransactionsInput) {
-  const { month, year, type, categoryId, page, limit } = query;
+  const { month, year, from, to, type, categoryId, page, limit } = query;
 
-  type DateFilter = { gte: Date; lt: Date } | undefined;
+  type DateFilter = { gte?: Date; lt?: Date } | undefined;
   let dateFilter: DateFilter;
 
-  if (month) {
+  if (from || to) {
+    dateFilter = {
+      ...(from ? { gte: new Date(from) } : {}),
+      ...(to ? { lt: new Date(to) } : {}),
+    };
+  } else if (month) {
     const parts = month.split("-");
     const yearNum = parseInt(parts[0] ?? "0", 10);
     const mon = parseInt(parts[1] ?? "1", 10);
@@ -65,8 +70,7 @@ export async function listTransactions(userId: string, query: ListTransactionsIn
     prisma.transaction.findMany({
       where,
       orderBy: { date: "desc" },
-      skip: (page - 1) * limit,
-      take: limit,
+      ...(limit ? { skip: (page - 1) * limit, take: limit } : {}),
       include: { category: { select: { id: true, name: true, type: true } } },
     }),
     prisma.transaction.count({ where }),
@@ -76,9 +80,9 @@ export async function listTransactions(userId: string, query: ListTransactionsIn
     transactions,
     pagination: {
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      page: limit ? page : 1,
+      limit: limit ?? total,
+      totalPages: limit ? Math.ceil(total / limit) : 1,
     },
   };
 }
