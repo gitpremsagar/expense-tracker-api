@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import authRoutes from "./modules/auth/auth.routes.js";
 import categoryRoutes from "./modules/category/category.routes.js";
+import categoryGroupRoutes from "./modules/categoryGroup/categoryGroup.routes.js";
 import transactionRoutes from "./modules/transaction/transaction.routes.js";
 import reportRoutes from "./modules/report/report.routes.js";
 import debtRoutes from "./modules/debt/debt.routes.js";
@@ -32,6 +33,7 @@ app.get("/", (_req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/categories", categoryRoutes);
+app.use("/category-groups", categoryGroupRoutes);
 app.use("/transactions", transactionRoutes);
 app.use("/reports", reportRoutes);
 app.use("/debts", debtRoutes);

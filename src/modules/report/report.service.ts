@@ -25,12 +25,70 @@ function percentageOf(total: number, part: number): number {
   return total > 0 ? +((part / total) * 100).toFixed(1) : 0;
 }
 
+const categoryInclude = {
+  category: {
+    select: { id: true, name: true, group: { select: { id: true, name: true } } },
+  },
+} as const;
+
+type CategoryTotal = {
+  id: string;
+  name: string;
+  type: string;
+  groupId: string | null;
+  groupName: string | null;
+  total: number;
+};
+
+type CategoryBreakdownItem = CategoryTotal & { percentage: number };
+
+function buildGroupBreakdown(
+  categoryBreakdown: CategoryBreakdownItem[],
+  typeTotals: Record<string, number>,
+) {
+  const groupMap = new Map<
+    string,
+    {
+      id: string | null;
+      name: string;
+      type: string;
+      total: number;
+      categories: { id: string; name: string; total: number; percentage: number }[];
+    }
+  >();
+
+  for (const cat of categoryBreakdown) {
+    const key = `${cat.type}:${cat.groupId ?? "ungrouped"}`;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        id: cat.groupId,
+        name: cat.groupName ?? "Ungrouped",
+        type: cat.type,
+        total: 0,
+        categories: [],
+      });
+    }
+    const group = groupMap.get(key)!;
+    group.total += cat.total;
+    group.categories.push({ id: cat.id, name: cat.name, total: cat.total, percentage: cat.percentage });
+  }
+
+  return Array.from(groupMap.values())
+    .map((group) => ({
+      ...group,
+      total: +group.total.toFixed(2),
+      percentage: percentageOf(typeTotals[group.type] ?? 0, group.total),
+      categories: group.categories.sort((a, b) => b.total - a.total),
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 export async function getMonthlyReport(userId: string, month: string) {
   const { start, end } = parseMonth(month);
 
   const transactions = await prisma.transaction.findMany({
     where: { userId, date: { gte: start, lt: end } },
-    include: { category: { select: { id: true, name: true } } },
+    include: categoryInclude,
     orderBy: { date: "asc" },
   });
 
@@ -39,10 +97,7 @@ export async function getMonthlyReport(userId: string, month: string) {
   let totalSaving = 0;
   let totalInvestment = 0;
 
-  const categoryMap = new Map<
-    string,
-    { id: string; name: string; type: string; total: number }
-  >();
+  const categoryMap = new Map<string, CategoryTotal>();
 
   const dailyMap = new Map<
     string,
@@ -83,6 +138,8 @@ export async function getMonthlyReport(userId: string, month: string) {
         id: tx.category.id,
         name: tx.category.name,
         type: tx.type,
+        groupId: tx.category.group?.id ?? null,
+        groupName: tx.category.group?.name ?? null,
         total: 0,
       });
     }
@@ -103,6 +160,8 @@ export async function getMonthlyReport(userId: string, month: string) {
 
   categoryBreakdown.sort((a, b) => b.total - a.total);
 
+  const groupBreakdown = buildGroupBreakdown(categoryBreakdown, typeTotals);
+
   const dailyTotals = Array.from(dailyMap.values()).sort((a, b) =>
     a.date.localeCompare(b.date),
   );
@@ -115,6 +174,7 @@ export async function getMonthlyReport(userId: string, month: string) {
     totalInvestment: +totalInvestment.toFixed(2),
     netBalance: +(totalIncome - totalExpense - totalSaving - totalInvestment).toFixed(2),
     categoryBreakdown,
+    groupBreakdown,
     dailyTotals,
   };
 }
@@ -124,7 +184,7 @@ export async function getAnnualReport(userId: string, year: number) {
 
   const transactions = await prisma.transaction.findMany({
     where: { userId, date: { gte: start, lt: end } },
-    include: { category: { select: { id: true, name: true } } },
+    include: categoryInclude,
     orderBy: { date: "asc" },
   });
 
@@ -133,10 +193,7 @@ export async function getAnnualReport(userId: string, year: number) {
   let totalSaving = 0;
   let totalInvestment = 0;
 
-  const categoryMap = new Map<
-    string,
-    { id: string; name: string; type: string; total: number }
-  >();
+  const categoryMap = new Map<string, CategoryTotal>();
 
   const monthlyMap = new Map<
     string,
@@ -178,6 +235,8 @@ export async function getAnnualReport(userId: string, year: number) {
         id: tx.category.id,
         name: tx.category.name,
         type: tx.type,
+        groupId: tx.category.group?.id ?? null,
+        groupName: tx.category.group?.name ?? null,
         total: 0,
       });
     }
@@ -198,6 +257,8 @@ export async function getAnnualReport(userId: string, year: number) {
 
   categoryBreakdown.sort((a, b) => b.total - a.total);
 
+  const groupBreakdown = buildGroupBreakdown(categoryBreakdown, typeTotals);
+
   const monthlyTotals = Array.from(monthlyMap.values()).map((bucket) => ({
     month: bucket.month,
     income: +bucket.income.toFixed(2),
@@ -214,6 +275,7 @@ export async function getAnnualReport(userId: string, year: number) {
     totalInvestment: +totalInvestment.toFixed(2),
     netBalance: +(totalIncome - totalExpense - totalSaving - totalInvestment).toFixed(2),
     categoryBreakdown,
+    groupBreakdown,
     monthlyTotals,
   };
 }

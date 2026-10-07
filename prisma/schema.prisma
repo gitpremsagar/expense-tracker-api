@@ -17,7 +17,8 @@ model User {
   password      String
   userType      UserType
   refreshTokens RefreshToken[]
-  categories    Category[]
+  categories     Category[]
+  categoryGroups CategoryGroup[]
   transactions  Transaction[]
   debts         Debt[]
   debtPayments  DebtPayment[]
@@ -44,9 +45,26 @@ model Category {
   type         CategoryType
   userId       String
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  groupId      String?
+  group        CategoryGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   transactions Transaction[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
+  @@unique([userId, name, type])
+  @@index([userId])
+  @@index([groupId])
+}
+
+model CategoryGroup {
+  id         String       @id @default(cuid()) @map("_id")
+  name       String
+  type       CategoryType
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categories Category[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 
   @@unique([userId, name, type])
   @@index([userId])
