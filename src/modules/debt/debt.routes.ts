@@ -11,5 +11,8 @@ router.get("/", debtController.list);
 router.get("/:id", debtController.getOne);
 router.put("/:id", debtController.update);
 router.delete("/:id", debtController.remove);
+router.post("/:id/payments", debtController.addPayment);
+router.put("/:id/payments/:paymentId", debtController.updatePayment);
+router.delete("/:id/payments/:paymentId", debtController.removePayment);
 
 export default router;

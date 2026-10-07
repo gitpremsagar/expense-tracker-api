@@ -24,6 +24,20 @@ export const listDebtsSchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 
+export const createDebtPaymentSchema = z.object({
+  amount: z.number().positive("Amount must be positive"),
+  date: z.string().datetime({ offset: true }).optional(),
+  note: z.string().max(500, "Note too long").trim().optional(),
+});
+
+export const updateDebtPaymentSchema = z.object({
+  amount: z.number().positive("Amount must be positive").optional(),
+  date: z.string().datetime({ offset: true }).optional(),
+  note: z.string().max(500, "Note too long").trim().optional().nullable(),
+});
+
 export type CreateDebtInput = z.infer<typeof createDebtSchema>;
+export type CreateDebtPaymentInput = z.infer<typeof createDebtPaymentSchema>;
+export type UpdateDebtPaymentInput = z.infer<typeof updateDebtPaymentSchema>;
 export type UpdateDebtInput = z.infer<typeof updateDebtSchema>;
 export type ListDebtsInput = z.infer<typeof listDebtsSchema>;
