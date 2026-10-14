@@ -83,35 +83,68 @@ function buildGroupBreakdown(
     .sort((a, b) => b.total - a.total);
 }
 
+function findDebtRepayments(userId: string, start: Date, end: Date) {
+  return prisma.debtPayment.findMany({
+    where: { userId, date: { gte: start, lt: end }, debt: { type: "TAKEN" } },
+    select: { amount: true, date: true },
+  });
+}
+
 export async function getMonthlyReport(userId: string, month: string) {
   const { start, end } = parseMonth(month);
 
-  const transactions = await prisma.transaction.findMany({
-    where: { userId, date: { gte: start, lt: end } },
-    include: categoryInclude,
-    orderBy: { date: "asc" },
-  });
+  const [transactions, debtRepayments] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { userId, date: { gte: start, lt: end } },
+      include: categoryInclude,
+      orderBy: { date: "asc" },
+    }),
+    findDebtRepayments(userId, start, end),
+  ]);
 
   let totalIncome = 0;
   let totalExpense = 0;
   let totalSaving = 0;
   let totalInvestment = 0;
+  let totalDebtRepayment = 0;
 
   const categoryMap = new Map<string, CategoryTotal>();
 
   const dailyMap = new Map<
     string,
-    { date: string; income: number; expense: number; saving: number; investment: number }
+    {
+      date: string;
+      income: number;
+      expense: number;
+      saving: number;
+      investment: number;
+      debtRepayment: number;
+    }
   >();
+
+  const dayBucket = (dateKey: string) => {
+    if (!dailyMap.has(dateKey)) {
+      dailyMap.set(dateKey, {
+        date: dateKey,
+        income: 0,
+        expense: 0,
+        saving: 0,
+        investment: 0,
+        debtRepayment: 0,
+      });
+    }
+    return dailyMap.get(dateKey)!;
+  };
+
+  for (const payment of debtRepayments) {
+    totalDebtRepayment += payment.amount;
+    dayBucket(payment.date.toISOString().slice(0, 10)).debtRepayment += payment.amount;
+  }
 
   for (const tx of transactions) {
     const dateKey = tx.date.toISOString().slice(0, 10);
 
-    if (!dailyMap.has(dateKey)) {
-      dailyMap.set(dateKey, { date: dateKey, income: 0, expense: 0, saving: 0, investment: 0 });
-    }
-
-    const day = dailyMap.get(dateKey)!;
+    const day = dayBucket(dateKey);
 
     switch (tx.type) {
       case "INCOME":
@@ -172,7 +205,14 @@ export async function getMonthlyReport(userId: string, month: string) {
     totalExpense: +totalExpense.toFixed(2),
     totalSaving: +totalSaving.toFixed(2),
     totalInvestment: +totalInvestment.toFixed(2),
-    netBalance: +(totalIncome - totalExpense - totalSaving - totalInvestment).toFixed(2),
+    totalDebtRepayment: +totalDebtRepayment.toFixed(2),
+    netBalance: +(
+      totalIncome -
+      totalExpense -
+      totalSaving -
+      totalInvestment -
+      totalDebtRepayment
+    ).toFixed(2),
     categoryBreakdown,
     groupBreakdown,
     dailyTotals,
@@ -182,27 +222,52 @@ export async function getMonthlyReport(userId: string, month: string) {
 export async function getAnnualReport(userId: string, year: number) {
   const { start, end } = parseYear(year);
 
-  const transactions = await prisma.transaction.findMany({
-    where: { userId, date: { gte: start, lt: end } },
-    include: categoryInclude,
-    orderBy: { date: "asc" },
-  });
+  const [transactions, debtRepayments] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { userId, date: { gte: start, lt: end } },
+      include: categoryInclude,
+      orderBy: { date: "asc" },
+    }),
+    findDebtRepayments(userId, start, end),
+  ]);
 
   let totalIncome = 0;
   let totalExpense = 0;
   let totalSaving = 0;
   let totalInvestment = 0;
+  let totalDebtRepayment = 0;
 
   const categoryMap = new Map<string, CategoryTotal>();
 
   const monthlyMap = new Map<
     string,
-    { month: string; income: number; expense: number; saving: number; investment: number }
+    {
+      month: string;
+      income: number;
+      expense: number;
+      saving: number;
+      investment: number;
+      debtRepayment: number;
+    }
   >();
 
   for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
     const key = monthKey(year, monthIndex);
-    monthlyMap.set(key, { month: key, income: 0, expense: 0, saving: 0, investment: 0 });
+    monthlyMap.set(key, {
+      month: key,
+      income: 0,
+      expense: 0,
+      saving: 0,
+      investment: 0,
+      debtRepayment: 0,
+    });
+  }
+
+  for (const payment of debtRepayments) {
+    const monthBucket = monthlyMap.get(monthKey(payment.date.getFullYear(), payment.date.getMonth()));
+    if (!monthBucket) continue;
+    totalDebtRepayment += payment.amount;
+    monthBucket.debtRepayment += payment.amount;
   }
 
   for (const tx of transactions) {
@@ -265,6 +330,7 @@ export async function getAnnualReport(userId: string, year: number) {
     expense: +bucket.expense.toFixed(2),
     saving: +bucket.saving.toFixed(2),
     investment: +bucket.investment.toFixed(2),
+    debtRepayment: +bucket.debtRepayment.toFixed(2),
   }));
 
   return {
@@ -273,7 +339,14 @@ export async function getAnnualReport(userId: string, year: number) {
     totalExpense: +totalExpense.toFixed(2),
     totalSaving: +totalSaving.toFixed(2),
     totalInvestment: +totalInvestment.toFixed(2),
-    netBalance: +(totalIncome - totalExpense - totalSaving - totalInvestment).toFixed(2),
+    totalDebtRepayment: +totalDebtRepayment.toFixed(2),
+    netBalance: +(
+      totalIncome -
+      totalExpense -
+      totalSaving -
+      totalInvestment -
+      totalDebtRepayment
+    ).toFixed(2),
     categoryBreakdown,
     groupBreakdown,
     monthlyTotals,
