@@ -22,6 +22,11 @@ model User {
   transactions  Transaction[]
   debts         Debt[]
   debtPayments  DebtPayment[]
+  assistantConversations AssistantConversation[]
+  assistantMessages      AssistantMessage[]
+  assistantUsage         AssistantUsageLog[]
+  assistantPreference    AssistantPreference?
+  assistantRequests      AssistantRequest[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
@@ -138,4 +143,75 @@ model DebtPayment {
 
   @@index([debtId])
   @@index([userId])
+}
+
+// ─── Assistant ────────────────────────────────────────────────────────────────
+
+model AssistantConversation {
+  id            String             @id @default(cuid()) @map("_id")
+  title         String             @default("New chat")
+  userId        String
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages      AssistantMessage[]
+  lastMessageAt DateTime           @default(now())
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([userId, lastMessageAt])
+}
+
+model AssistantMessage {
+  id             String                @id @default(cuid()) @map("_id")
+  conversationId String
+  conversation   AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String
+  content        String
+  payload        Json?
+  createdAt      DateTime              @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([userId])
+}
+
+model AssistantUsageLog {
+  id               String   @id @default(cuid()) @map("_id")
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId   String?
+  model            String
+  intent           String?
+  proposalCount    Int      @default(0)
+  promptTokens     Int?
+  completionTokens Int?
+  totalTokens      Int?
+  latencyMs        Int
+  createdAt        DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model AssistantPreference {
+  id        String   @id @default(cuid()) @map("_id")
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  autoSave  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AssistantRequest {
+  id        String   @id @default(cuid()) @map("_id")
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestId String
+  kind      String
+  result    Json?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@unique([userId, requestId])
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }

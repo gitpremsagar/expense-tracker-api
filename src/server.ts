@@ -8,6 +8,7 @@ import categoryGroupRoutes from "./modules/categoryGroup/categoryGroup.routes.js
 import transactionRoutes from "./modules/transaction/transaction.routes.js";
 import reportRoutes from "./modules/report/report.routes.js";
 import debtRoutes from "./modules/debt/debt.routes.js";
+import assistantRoutes from "./modules/assistant/assistant.routes.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { prisma } from "./lib/prisma.js";
@@ -37,6 +38,7 @@ app.use("/category-groups", categoryGroupRoutes);
 app.use("/transactions", transactionRoutes);
 app.use("/reports", reportRoutes);
 app.use("/debts", debtRoutes);
+app.use("/assistant", assistantRoutes);
 
 app.use(errorHandler);
 
