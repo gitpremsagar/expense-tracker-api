@@ -27,6 +27,7 @@ model User {
   debts               Debt[]
   debtPayments        DebtPayment[]
   budgets             Budget[]
+  assistantThreads    AssistantThread[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -85,12 +86,17 @@ model Transaction {
   category   Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   userId     String
   user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // "MANUAL" | "ASSISTANT" | "IMPORT"; null means legacy/manual.
+  source     String?
+  importId   String?
+  dedupeKey  String?
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
   @@index([userId])
   @@index([userId, date])
   @@index([categoryId])
+  @@index([userId, dedupeKey])
 }
 
 enum UserType {
@@ -172,4 +178,130 @@ model Budget {
 
   @@unique([userId, month, scope])
   @@index([userId, month])
+}
+
+// ─── Assistant ────────────────────────────────────────────────────────────────
+
+model AssistantThread {
+  id        String             @id @default(cuid()) @map("_id")
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  messages  AssistantMessage[]
+  imports   AssistantImport[]
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@map("AiAssistantThread")
+  @@index([userId, updatedAt])
+}
+
+model AssistantMessage {
+  id               String          @id @default(cuid()) @map("_id")
+  threadId         String
+  thread           AssistantThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId           String
+  seq              Int
+  role             String // "user" | "assistant"
+  kind             String // "TEXT" | "IMAGE" | "AUDIO" | "STATEMENT" | "SYSTEM"
+  text             String?
+  transcript       String?
+  reasoning        String? // chain-of-thought returned by DeepSeek thinking mode
+  attachment       Json?
+  turn             Json?
+  model            String?
+  promptTokens     Int?
+  completionTokens Int?
+  createdAt        DateTime        @default(now())
+
+  @@map("AiAssistantMessage")
+  @@unique([threadId, seq])
+  @@index([userId, createdAt])
+}
+
+model AssistantActionBatch {
+  id         String    @id @default(cuid()) @map("_id")
+  userId     String
+  threadId   String?
+  requestId  String // client idempotency key
+  status     String // "CONFIRMED" | "UNDONE"
+  operations Json // before/after snapshots for undo
+  createdIds String[]
+  createdAt  DateTime  @default(now())
+  undoneAt   DateTime?
+
+  @@map("AiAssistantActionBatch")
+  @@unique([userId, requestId])
+  @@index([userId, createdAt])
+}
+
+model AssistantPreference {
+  id              String    @id @default(cuid()) @map("_id")
+  userId          String    @unique
+  autoSaveCreates Boolean   @default(false)
+  thinkingMode    Boolean   @default(false)
+  reasoningEffort String    @default("high") // "low" | "high" | "max"
+  timezone        String    @default("Asia/Kolkata")
+  consentAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("AiAssistantPreference")
+}
+
+model AssistantImport {
+  id             String               @id @default(cuid()) @map("_id")
+  userId         String
+  threadId       String?
+  thread         AssistantThread?     @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  source         String // "PDF" | "CSV" | "XLSX"
+  filename       String // sanitized, display only
+  status         String // "PROCESSING" | "READY" | "FAILED" | "COMMITTED"
+  pages          Int?
+  rowCount       Int                  @default(0)
+  duplicateCount Int                  @default(0)
+  error          String?
+  rows           AssistantImportRow[]
+  createdAt      DateTime             @default(now())
+  committedAt    DateTime?
+
+  @@map("AiAssistantImport")
+  @@index([userId, createdAt])
+}
+
+model AssistantImportRow {
+  id                    String          @id @default(cuid()) @map("_id")
+  importId              String
+  importJob             AssistantImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  userId                String
+  rowIndex              Int
+  date                  DateTime
+  amount                Float
+  type                  String // recomputed from the chosen category on commit
+  description           String?
+  categoryId            String?
+  suggestedCategoryName String?
+  confidence            Float           @default(0)
+  dedupeKey             String?
+  status                String // "PENDING" | "DUPLICATE" | "IMPORTED" | "SKIPPED"
+  transactionId         String?
+
+  @@map("AiAssistantImportRow")
+  @@unique([importId, rowIndex])
+  @@index([userId, dedupeKey])
+}
+
+model AssistantUsage {
+  id               String   @id @default(cuid()) @map("_id")
+  userId           String
+  day              String // YYYY-MM-DD in APP_TIMEZONE
+  messages         Int      @default(0)
+  importPages      Int      @default(0)
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  costUsd          Float    @default(0)
+  updatedAt        DateTime @updatedAt
+
+  @@map("AiAssistantUsage")
+  @@unique([userId, day])
 }

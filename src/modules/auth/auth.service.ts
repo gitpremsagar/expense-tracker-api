@@ -7,6 +7,7 @@ import {
   sendPasswordResetEmail,
 } from "../../lib/email.js";
 import { comparePassword, hashPassword } from "../../utils/password.js";
+import { clearAssistantData } from "../assistant/assistant.threads.js";
 import {
   getRefreshTokenExpiryDate,
   signAccessToken,
@@ -335,6 +336,7 @@ export async function deleteAccount(userId: string, password: string): Promise<v
 
   // Explicit deletion order keeps Mongo/Prisma predictable and also works if
   // cascade behaviour changes. Nothing here touches another user's data.
+  await clearAssistantData(userId);
   await prisma.transaction.deleteMany({ where: { userId } });
   await prisma.debtPayment.deleteMany({ where: { userId } });
   await prisma.debt.deleteMany({ where: { userId } });
