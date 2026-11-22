@@ -1,4 +1,5 @@
 import { prisma } from "../../lib/prisma.js";
+import { getMonthRange, getYearRange, roundMoney } from "../../utils/date.js";
 import { ForbiddenError, NotFoundError } from "../../utils/errors.js";
 import type {
   CreateTransactionInput,
@@ -25,7 +26,7 @@ export async function createTransaction(userId: string, input: CreateTransaction
 
   return prisma.transaction.create({
     data: {
-      amount: input.amount,
+      amount: roundMoney(input.amount),
       note: input.note ?? null,
       type: category.type,
       date: input.date ? new Date(input.date) : new Date(),
@@ -48,15 +49,11 @@ export async function listTransactions(userId: string, query: ListTransactionsIn
       ...(to ? { lt: new Date(to) } : {}),
     };
   } else if (month) {
-    const parts = month.split("-");
-    const yearNum = parseInt(parts[0] ?? "0", 10);
-    const mon = parseInt(parts[1] ?? "1", 10);
-    const start = new Date(yearNum, mon - 1, 1);
-    const end = new Date(yearNum, mon, 1);
+    const { start, end } = getMonthRange(month);
     dateFilter = { gte: start, lt: end };
   } else if (year) {
-    const yearNum = parseInt(year, 10);
-    dateFilter = { gte: new Date(yearNum, 0, 1), lt: new Date(yearNum + 1, 0, 1) };
+    const { start, end } = getYearRange(parseInt(year, 10));
+    dateFilter = { gte: start, lt: end };
   }
 
   const where = {
@@ -128,7 +125,7 @@ export async function updateTransaction(
   return prisma.transaction.update({
     where: { id: transactionId },
     data: {
-      ...(input.amount !== undefined ? { amount: input.amount } : {}),
+      ...(input.amount !== undefined ? { amount: roundMoney(input.amount) } : {}),
       ...(input.note !== undefined ? { note: input.note } : {}),
       ...(input.categoryId ? { categoryId: input.categoryId, type: newType } : {}),
       ...(input.date ? { date: new Date(input.date) } : {}),

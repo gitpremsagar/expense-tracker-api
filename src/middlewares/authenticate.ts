@@ -1,12 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
+import { prisma } from "../lib/prisma.js";
 import { verifyAccessToken } from "../utils/jwt.js";
 import { UnauthorizedError } from "../utils/errors.js";
 
-export function authenticate(
+export async function authenticate(
   req: Request,
   _res: Response,
   next: NextFunction,
-): void {
+): Promise<void> {
   const authHeader = req.headers.authorization;
 
   if (!authHeader?.startsWith("Bearer ")) {
@@ -18,10 +19,20 @@ export function authenticate(
 
   try {
     const payload = verifyAccessToken(token);
-    req.user = {
-      id: payload.sub,
-      userType: payload.userType,
-    };
+
+    // Re-read the account so a deleted/suspended user (or a role change) takes
+    // effect immediately instead of waiting for the access token to expire.
+    const user = await prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, userType: true },
+    });
+
+    if (!user) {
+      next(new UnauthorizedError("Account is no longer active"));
+      return;
+    }
+
+    req.user = { id: user.id, userType: user.userType };
     next();
   } catch {
     next(new UnauthorizedError("Invalid access token"));

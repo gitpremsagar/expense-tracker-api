@@ -14,7 +14,6 @@ export const updateDebtSchema = z.object({
   amount: z.number().positive("Amount must be positive").optional(),
   description: z.string().max(500, "Description too long").trim().optional().nullable(),
   date: z.string().datetime({ offset: true }).optional(),
-  status: z.enum(["ACTIVE", "SETTLED"]).optional(),
 });
 
 export const listDebtsSchema = z.object({

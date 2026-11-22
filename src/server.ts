@@ -8,6 +8,7 @@ import categoryGroupRoutes from "./modules/categoryGroup/categoryGroup.routes.js
 import transactionRoutes from "./modules/transaction/transaction.routes.js";
 import reportRoutes from "./modules/report/report.routes.js";
 import debtRoutes from "./modules/debt/debt.routes.js";
+import budgetRoutes from "./modules/budget/budget.routes.js";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 import { prisma } from "./lib/prisma.js";
@@ -16,15 +17,17 @@ dotenv.config();
 
 const app = express();
 
+app.set("trust proxy", 1);
+
 app.use(
   cors({
     origin: [env.FRONTEND_URL, "https://moneytracker365.com", "https://www.moneytracker365.com"],
     methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Client"],
     credentials: true,
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 app.get("/", (_req, res) => {
@@ -37,6 +40,7 @@ app.use("/category-groups", categoryGroupRoutes);
 app.use("/transactions", transactionRoutes);
 app.use("/reports", reportRoutes);
 app.use("/debts", debtRoutes);
+app.use("/budgets", budgetRoutes);
 
 app.use(errorHandler);
 

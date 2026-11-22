@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { z } from "zod";
 
 const envSchema = z.object({
@@ -9,6 +10,10 @@ const envSchema = z.object({
   FRONTEND_URL: z.string().url(),
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().optional(),
+  APP_TIMEZONE: z.string().default("Asia/Kolkata"),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+  PASSWORD_RESET_TTL_MINUTES: z.coerce.number().int().positive().default(60),
 });
 
 export const env = envSchema.parse({
@@ -20,4 +25,8 @@ export const env = envSchema.parse({
   FRONTEND_URL: process.env.FRONTEND_URL,
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
+  APP_TIMEZONE: process.env.APP_TIMEZONE,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  EMAIL_FROM: process.env.EMAIL_FROM,
+  PASSWORD_RESET_TTL_MINUTES: process.env.PASSWORD_RESET_TTL_MINUTES,
 });

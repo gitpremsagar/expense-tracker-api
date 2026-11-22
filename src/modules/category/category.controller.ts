@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import * as categoryService from "./category.service.js";
+import { addStarterCategories } from "./starter.service.js";
 import { createCategorySchema, updateCategorySchema } from "./category.validation.js";
 import type { CategoryType } from "@prisma/client";
 
@@ -8,6 +9,15 @@ export async function create(req: Request, res: Response, next: NextFunction): P
     const input = createCategorySchema.parse(req.body);
     const category = await categoryService.createCategory(req.user!.id, input);
     res.status(201).json({ category });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function addStarter(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await addStarterCategories(req.user!.id);
+    res.status(201).json(result);
   } catch (error) {
     next(error);
   }

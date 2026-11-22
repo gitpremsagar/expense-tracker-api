@@ -11,19 +11,21 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(cuid()) @map("_id")
-  name          String
-  email         String         @unique
-  password      String
-  userType      UserType
-  refreshTokens RefreshToken[]
-  categories     Category[]
-  categoryGroups CategoryGroup[]
-  transactions  Transaction[]
-  debts         Debt[]
-  debtPayments  DebtPayment[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                  String               @id @default(cuid()) @map("_id")
+  name                String
+  email               String               @unique
+  password            String
+  userType            UserType
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  categories          Category[]
+  categoryGroups      CategoryGroup[]
+  transactions        Transaction[]
+  debts               Debt[]
+  debtPayments        DebtPayment[]
+  budgets             Budget[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model RefreshToken {
@@ -40,16 +42,16 @@ model RefreshToken {
 }
 
 model Category {
-  id           String        @id @default(cuid()) @map("_id")
+  id           String         @id @default(cuid()) @map("_id")
   name         String
   type         CategoryType
   userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   groupId      String?
   group        CategoryGroup? @relation(fields: [groupId], references: [id], onDelete: SetNull)
   transactions Transaction[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
   @@unique([userId, name, type])
   @@index([userId])
@@ -138,4 +140,33 @@ model DebtPayment {
 
   @@index([debtId])
   @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid()) @map("_id")
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// Monthly spending budget. `scope` is "TOTAL" or a category id, which avoids
+/// nullable-column problems in MongoDB unique indexes.
+model Budget {
+  id        String   @id @default(cuid()) @map("_id")
+  month     String
+  scope     String
+  amount    Float
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, month, scope])
+  @@index([userId, month])
 }

@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
+import { roundMoney } from "../../utils/date.js";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../../utils/errors.js";
 import type {
   CreateDebtInput,
@@ -69,7 +70,7 @@ export async function createDebt(userId: string, input: CreateDebtInput) {
     data: {
       type: input.type,
       partyName: input.partyName,
-      amount: input.amount,
+      amount: roundMoney(input.amount),
       description: input.description ?? null,
       date: input.date ? new Date(input.date) : new Date(),
       status: "ACTIVE",
@@ -144,16 +145,15 @@ export async function updateDebt(
       data: {
         ...(input.type ? { type: input.type } : {}),
         ...(input.partyName ? { partyName: input.partyName } : {}),
-        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        ...(input.amount !== undefined ? { amount: roundMoney(input.amount) } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.date ? { date: new Date(input.date) } : {}),
-        ...(input.status ? { status: input.status } : {}),
       },
     });
 
-    if (input.amount !== undefined && !input.status) {
-      await recomputeStatus(tx, debtId, updated.amount);
-    }
+    // Status is always derived from payments. Letting the client set it
+    // directly is what allowed "SETTLED with ₹2,000 still outstanding".
+    await recomputeStatus(tx, debtId, updated.amount);
   });
 
   return getDebt(userId, debtId);
@@ -179,7 +179,7 @@ export async function addPayment(userId: string, debtId: string, input: CreateDe
 
     await tx.debtPayment.create({
       data: {
-        amount: input.amount,
+        amount: roundMoney(input.amount),
         date: input.date ? new Date(input.date) : new Date(),
         note: input.note || null,
         debtId,
@@ -213,7 +213,7 @@ export async function updatePayment(
     await tx.debtPayment.update({
       where: { id: paymentId },
       data: {
-        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        ...(input.amount !== undefined ? { amount: roundMoney(input.amount) } : {}),
         ...(input.date ? { date: new Date(input.date) } : {}),
         ...(input.note !== undefined ? { note: input.note || null } : {}),
       },

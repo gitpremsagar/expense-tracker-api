@@ -110,5 +110,8 @@ export async function deleteCategory(userId: string, categoryId: string) {
     );
   }
 
-  await prisma.category.delete({ where: { id: categoryId } });
+  await prisma.$transaction([
+    prisma.budget.deleteMany({ where: { userId, scope: categoryId } }),
+    prisma.category.delete({ where: { id: categoryId } }),
+  ]);
 }

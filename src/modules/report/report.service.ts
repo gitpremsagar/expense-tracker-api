@@ -1,25 +1,5 @@
 import { prisma } from "../../lib/prisma.js";
-
-function parseMonth(month: string): { start: Date; end: Date } {
-  const parts = month.split("-");
-  const year = parseInt(parts[0] ?? "0", 10);
-  const mon = parseInt(parts[1] ?? "1", 10);
-  return {
-    start: new Date(year, mon - 1, 1),
-    end: new Date(year, mon, 1),
-  };
-}
-
-function parseYear(year: number): { start: Date; end: Date } {
-  return {
-    start: new Date(year, 0, 1),
-    end: new Date(year + 1, 0, 1),
-  };
-}
-
-function monthKey(year: number, monthIndex: number): string {
-  return `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
-}
+import { dateKey, getMonthRange, getYearRange, monthKey, roundMoney } from "../../utils/date.js";
 
 function percentageOf(total: number, part: number): number {
   return total > 0 ? +((part / total) * 100).toFixed(1) : 0;
@@ -83,23 +63,23 @@ function buildGroupBreakdown(
     .sort((a, b) => b.total - a.total);
 }
 
-function findDebtRepayments(userId: string, start: Date, end: Date) {
+function findDebtPayments(userId: string, start: Date, end: Date) {
   return prisma.debtPayment.findMany({
-    where: { userId, date: { gte: start, lt: end }, debt: { type: "TAKEN" } },
-    select: { amount: true, date: true },
+    where: { userId, date: { gte: start, lt: end } },
+    select: { amount: true, date: true, debt: { select: { type: true } } },
   });
 }
 
 export async function getMonthlyReport(userId: string, month: string) {
-  const { start, end } = parseMonth(month);
+  const { start, end } = getMonthRange(month);
 
-  const [transactions, debtRepayments] = await Promise.all([
+  const [transactions, debtPayments] = await Promise.all([
     prisma.transaction.findMany({
       where: { userId, date: { gte: start, lt: end } },
       include: categoryInclude,
       orderBy: { date: "asc" },
     }),
-    findDebtRepayments(userId, start, end),
+    findDebtPayments(userId, start, end),
   ]);
 
   let totalIncome = 0;
@@ -107,6 +87,7 @@ export async function getMonthlyReport(userId: string, month: string) {
   let totalSaving = 0;
   let totalInvestment = 0;
   let totalDebtRepayment = 0;
+  let totalDebtRecovery = 0;
 
   const categoryMap = new Map<string, CategoryTotal>();
 
@@ -119,32 +100,40 @@ export async function getMonthlyReport(userId: string, month: string) {
       saving: number;
       investment: number;
       debtRepayment: number;
+      debtRecovery: number;
     }
   >();
 
-  const dayBucket = (dateKey: string) => {
-    if (!dailyMap.has(dateKey)) {
-      dailyMap.set(dateKey, {
-        date: dateKey,
+  const dayBucket = (key: string) => {
+    if (!dailyMap.has(key)) {
+      dailyMap.set(key, {
+        date: key,
         income: 0,
         expense: 0,
         saving: 0,
         investment: 0,
         debtRepayment: 0,
+        debtRecovery: 0,
       });
     }
-    return dailyMap.get(dateKey)!;
+    return dailyMap.get(key)!;
   };
 
-  for (const payment of debtRepayments) {
-    totalDebtRepayment += payment.amount;
-    dayBucket(payment.date.toISOString().slice(0, 10)).debtRepayment += payment.amount;
+  for (const payment of debtPayments) {
+    const key = dateKey(payment.date);
+    if (payment.debt.type === "TAKEN") {
+      totalDebtRepayment += payment.amount;
+      dayBucket(key).debtRepayment += payment.amount;
+    } else {
+      totalDebtRecovery += payment.amount;
+      dayBucket(key).debtRecovery += payment.amount;
+    }
   }
 
   for (const tx of transactions) {
-    const dateKey = tx.date.toISOString().slice(0, 10);
+    const key = dateKey(tx.date);
 
-    const day = dayBucket(dateKey);
+    const day = dayBucket(key);
 
     switch (tx.type) {
       case "INCOME":
@@ -201,18 +190,20 @@ export async function getMonthlyReport(userId: string, month: string) {
 
   return {
     month,
-    totalIncome: +totalIncome.toFixed(2),
-    totalExpense: +totalExpense.toFixed(2),
-    totalSaving: +totalSaving.toFixed(2),
-    totalInvestment: +totalInvestment.toFixed(2),
-    totalDebtRepayment: +totalDebtRepayment.toFixed(2),
-    netBalance: +(
-      totalIncome -
-      totalExpense -
-      totalSaving -
-      totalInvestment -
-      totalDebtRepayment
-    ).toFixed(2),
+    totalIncome: roundMoney(totalIncome),
+    totalExpense: roundMoney(totalExpense),
+    totalSaving: roundMoney(totalSaving),
+    totalInvestment: roundMoney(totalInvestment),
+    totalDebtRepayment: roundMoney(totalDebtRepayment),
+    totalDebtRecovery: roundMoney(totalDebtRecovery),
+    netBalance: roundMoney(
+      totalIncome +
+        totalDebtRecovery -
+        totalExpense -
+        totalSaving -
+        totalInvestment -
+        totalDebtRepayment,
+    ),
     categoryBreakdown,
     groupBreakdown,
     dailyTotals,
@@ -220,15 +211,15 @@ export async function getMonthlyReport(userId: string, month: string) {
 }
 
 export async function getAnnualReport(userId: string, year: number) {
-  const { start, end } = parseYear(year);
+  const { start, end } = getYearRange(year);
 
-  const [transactions, debtRepayments] = await Promise.all([
+  const [transactions, debtPayments] = await Promise.all([
     prisma.transaction.findMany({
       where: { userId, date: { gte: start, lt: end } },
       include: categoryInclude,
       orderBy: { date: "asc" },
     }),
-    findDebtRepayments(userId, start, end),
+    findDebtPayments(userId, start, end),
   ]);
 
   let totalIncome = 0;
@@ -236,6 +227,7 @@ export async function getAnnualReport(userId: string, year: number) {
   let totalSaving = 0;
   let totalInvestment = 0;
   let totalDebtRepayment = 0;
+  let totalDebtRecovery = 0;
 
   const categoryMap = new Map<string, CategoryTotal>();
 
@@ -248,11 +240,12 @@ export async function getAnnualReport(userId: string, year: number) {
       saving: number;
       investment: number;
       debtRepayment: number;
+      debtRecovery: number;
     }
   >();
 
   for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
-    const key = monthKey(year, monthIndex);
+    const key = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
     monthlyMap.set(key, {
       month: key,
       income: 0,
@@ -260,18 +253,24 @@ export async function getAnnualReport(userId: string, year: number) {
       saving: 0,
       investment: 0,
       debtRepayment: 0,
+      debtRecovery: 0,
     });
   }
 
-  for (const payment of debtRepayments) {
-    const monthBucket = monthlyMap.get(monthKey(payment.date.getFullYear(), payment.date.getMonth()));
+  for (const payment of debtPayments) {
+    const monthBucket = monthlyMap.get(monthKey(payment.date));
     if (!monthBucket) continue;
-    totalDebtRepayment += payment.amount;
-    monthBucket.debtRepayment += payment.amount;
+    if (payment.debt.type === "TAKEN") {
+      totalDebtRepayment += payment.amount;
+      monthBucket.debtRepayment += payment.amount;
+    } else {
+      totalDebtRecovery += payment.amount;
+      monthBucket.debtRecovery += payment.amount;
+    }
   }
 
   for (const tx of transactions) {
-    const key = monthKey(tx.date.getFullYear(), tx.date.getMonth());
+    const key = monthKey(tx.date);
     const monthBucket = monthlyMap.get(key);
     if (!monthBucket) continue;
 
@@ -326,27 +325,30 @@ export async function getAnnualReport(userId: string, year: number) {
 
   const monthlyTotals = Array.from(monthlyMap.values()).map((bucket) => ({
     month: bucket.month,
-    income: +bucket.income.toFixed(2),
-    expense: +bucket.expense.toFixed(2),
-    saving: +bucket.saving.toFixed(2),
-    investment: +bucket.investment.toFixed(2),
-    debtRepayment: +bucket.debtRepayment.toFixed(2),
+    income: roundMoney(bucket.income),
+    expense: roundMoney(bucket.expense),
+    saving: roundMoney(bucket.saving),
+    investment: roundMoney(bucket.investment),
+    debtRepayment: roundMoney(bucket.debtRepayment),
+    debtRecovery: roundMoney(bucket.debtRecovery),
   }));
 
   return {
     year,
-    totalIncome: +totalIncome.toFixed(2),
-    totalExpense: +totalExpense.toFixed(2),
-    totalSaving: +totalSaving.toFixed(2),
-    totalInvestment: +totalInvestment.toFixed(2),
-    totalDebtRepayment: +totalDebtRepayment.toFixed(2),
-    netBalance: +(
-      totalIncome -
-      totalExpense -
-      totalSaving -
-      totalInvestment -
-      totalDebtRepayment
-    ).toFixed(2),
+    totalIncome: roundMoney(totalIncome),
+    totalExpense: roundMoney(totalExpense),
+    totalSaving: roundMoney(totalSaving),
+    totalInvestment: roundMoney(totalInvestment),
+    totalDebtRepayment: roundMoney(totalDebtRepayment),
+    totalDebtRecovery: roundMoney(totalDebtRecovery),
+    netBalance: roundMoney(
+      totalIncome +
+        totalDebtRecovery -
+        totalExpense -
+        totalSaving -
+        totalInvestment -
+        totalDebtRepayment,
+    ),
     categoryBreakdown,
     groupBreakdown,
     monthlyTotals,
