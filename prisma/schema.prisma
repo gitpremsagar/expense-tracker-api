@@ -16,6 +16,9 @@ model User {
   email               String               @unique
   password            String
   userType            UserType
+  // Bumped on password change/reset and "sign out everywhere". Access tokens
+  // carry the version they were issued with, so old ones stop working at once.
+  tokenVersion        Int                  @default(0)
   refreshTokens       RefreshToken[]
   passwordResetTokens PasswordResetToken[]
   categories          Category[]

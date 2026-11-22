@@ -24,11 +24,18 @@ export async function authenticate(
     // effect immediately instead of waiting for the access token to expire.
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, userType: true },
+      select: { id: true, userType: true, tokenVersion: true },
     });
 
     if (!user) {
       next(new UnauthorizedError("Account is no longer active"));
+      return;
+    }
+
+    // Password changes and "sign out everywhere" bump tokenVersion, which
+    // invalidates access tokens issued before that moment on every device.
+    if (payload.tokenVersion !== user.tokenVersion) {
+      next(new UnauthorizedError("Session is no longer valid"));
       return;
     }
 

@@ -49,6 +49,7 @@ async function createTokenPair(user: User): Promise<AuthResult> {
   const accessToken = signAccessToken({
     sub: user.id,
     userType: user.userType,
+    tokenVersion: user.tokenVersion,
   });
 
   await prisma.refreshToken.create({
@@ -238,7 +239,7 @@ export async function resetPassword(token: string, newPassword: string): Promise
   await prisma.$transaction([
     prisma.user.update({
       where: { id: stored.userId },
-      data: { password: passwordHash },
+      data: { password: passwordHash, tokenVersion: { increment: 1 } },
     }),
     prisma.passwordResetToken.update({
       where: { id: stored.id },
@@ -297,7 +298,10 @@ export async function changePassword(
   const passwordHash = await hashPassword(newPassword);
 
   await prisma.$transaction([
-    prisma.user.update({ where: { id: userId }, data: { password: passwordHash } }),
+    prisma.user.update({
+      where: { id: userId },
+      data: { password: passwordHash, tokenVersion: { increment: 1 } },
+    }),
     prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
@@ -306,10 +310,16 @@ export async function changePassword(
 }
 
 export async function logoutAllSessions(userId: string): Promise<void> {
-  await prisma.refreshToken.updateMany({
-    where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
-  });
+  await prisma.$transaction([
+    prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } },
+    }),
+    prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    }),
+  ]);
 }
 
 export async function deleteAccount(userId: string, password: string): Promise<void> {

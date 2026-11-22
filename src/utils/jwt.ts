@@ -5,6 +5,7 @@ import { env } from "../config/env.js";
 export type AccessTokenPayload = {
   sub: string;
   userType: UserType;
+  tokenVersion: number;
 };
 
 export type RefreshTokenPayload = {
