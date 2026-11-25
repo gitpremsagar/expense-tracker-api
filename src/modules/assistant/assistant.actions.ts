@@ -4,6 +4,12 @@ import { roundMoney } from "../../utils/date.js";
 import { AppError, BadRequestError, ForbiddenError, NotFoundError } from "../../utils/errors.js";
 import type { ConfirmItem } from "./assistant.schema.js";
 import { isDateInRange, normalizeDateValue } from "./assistant.time.js";
+import {
+  applyEntityAction,
+  undoEntityOperation,
+  type EntitySnapshot,
+  type EntityUndoOperation,
+} from "./assistant.entities.js";
 
 export type TransactionSnapshot = {
   id: string;
@@ -15,10 +21,16 @@ export type TransactionSnapshot = {
   categoryName: string;
 };
 
-type UndoOperation =
+type TransactionUndoOperation =
   | { kind: "CREATE"; transactionId: string; after: TransactionSnapshot }
   | { kind: "UPDATE"; transactionId: string; before: TransactionSnapshot; after: TransactionSnapshot }
   | { kind: "DELETE"; transactionId: string; before: TransactionSnapshot };
+
+type UndoOperation = TransactionUndoOperation | EntityUndoOperation;
+
+function isEntityOperation(operation: UndoOperation): operation is EntityUndoOperation {
+  return (operation as { entity?: string }).entity !== undefined;
+}
 
 const MAX_UNDO_AGE_MS = 10 * 60_000;
 
@@ -85,8 +97,44 @@ export type ConfirmResult = {
   updated: number;
   deleted: number;
   transactions: TransactionSnapshot[];
+  entityCreated: number;
+  entityUpdated: number;
+  entityDeleted: number;
+  entities: EntitySnapshot[];
   undoUntil: string;
 };
+
+function summarize(operations: UndoOperation[], createdAt: Date) {
+  const transactionOperations = operations.filter(
+    (operation): operation is TransactionUndoOperation => !isEntityOperation(operation),
+  );
+
+  const transactions = transactionOperations.flatMap((operation) =>
+    operation.kind === "DELETE" ? [] : [operation.after],
+  );
+
+  const entityOperations = operations.filter(isEntityOperation);
+
+  return {
+    created: transactionOperations.filter((operation) => operation.kind === "CREATE").length,
+    updated: transactionOperations.filter((operation) => operation.kind === "UPDATE").length,
+    deleted: transactionOperations.filter((operation) => operation.kind === "DELETE").length,
+    transactions,
+    entityCreated: entityOperations.filter((operation) => operation.kind === "CREATE").length,
+    entityUpdated: entityOperations.filter((operation) => operation.kind === "UPDATE").length,
+    entityDeleted: entityOperations.filter((operation) => operation.kind === "DELETE").length,
+    entities: entityOperations.flatMap((operation) =>
+      operation.kind === "DELETE"
+        ? operation.before
+          ? [operation.before]
+          : []
+        : operation.after
+          ? [operation.after]
+          : [],
+    ),
+    undoUntil: new Date(createdAt.getTime() + MAX_UNDO_AGE_MS).toISOString(),
+  };
+}
 
 export async function confirmActions(
   userId: string,
@@ -101,24 +149,21 @@ export async function confirmActions(
     const previous = (existing.operations ?? []) as unknown as UndoOperation[];
     return {
       batchId: existing.id,
-      created: previous.filter((operation) => operation.kind === "CREATE").length,
-      updated: previous.filter((operation) => operation.kind === "UPDATE").length,
-      deleted: previous.filter((operation) => operation.kind === "DELETE").length,
-      transactions: previous.flatMap((operation) =>
-        operation.kind === "DELETE" ? [] : [operation.after],
-      ),
-      undoUntil: new Date(existing.createdAt.getTime() + MAX_UNDO_AGE_MS).toISOString(),
+      ...summarize(previous, existing.createdAt),
     };
   }
 
   const operations: UndoOperation[] = [];
   const createdIds: string[] = [];
-  let updated = 0;
-  let deleted = 0;
 
   try {
     await prisma.$transaction(async (tx) => {
       for (const item of input.items) {
+        if (item.kind === "ENTITY") {
+          operations.push(await applyEntityAction(tx, userId, item, timeZone));
+          continue;
+        }
+
         if (item.kind === "CREATE") {
           const category = await categoryForCreate(tx, userId, item);
           const date = normalizeDateValue(item.date, timeZone);
@@ -163,7 +208,6 @@ export async function confirmActions(
 
         if (item.kind === "DELETE") {
           await tx.transaction.delete({ where: { id: target.id } });
-          deleted += 1;
           operations.push({ kind: "DELETE", transactionId: target.id, before });
           continue;
         }
@@ -205,7 +249,6 @@ export async function confirmActions(
           include: { category: { select: { name: true } } },
         });
 
-        updated += 1;
         operations.push({
           kind: "UPDATE",
           transactionId: target.id,
@@ -234,13 +277,7 @@ export async function confirmActions(
 
     return {
       batchId: batch.id,
-      created: createdIds.length,
-      updated,
-      deleted,
-      transactions: operations.flatMap((operation) =>
-        operation.kind === "DELETE" ? [] : [operation.after],
-      ),
-      undoUntil: new Date(batch.createdAt.getTime() + MAX_UNDO_AGE_MS).toISOString(),
+      ...summarize(operations, batch.createdAt),
     };
   } catch (error) {
     if (error instanceof AppError) throw error;
@@ -276,6 +313,13 @@ export async function undoBatch(userId: string, batchId: string) {
 
   await prisma.$transaction(async (tx) => {
     for (const operation of [...operations].reverse()) {
+      if (isEntityOperation(operation)) {
+        const outcome = await undoEntityOperation(tx, userId, operation);
+        restored += outcome.restored;
+        removed += outcome.removed;
+        continue;
+      }
+
       if (operation.kind === "CREATE") {
         const current = await tx.transaction.findUnique({ where: { id: operation.transactionId } });
         if (current && current.userId === userId) {

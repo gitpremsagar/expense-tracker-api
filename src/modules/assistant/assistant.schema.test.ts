@@ -63,6 +63,62 @@ test("confirmSchema accepts create, update and delete in one batch", () => {
   assert.equal(parsed.items.length, 3);
 });
 
+test("modelTurnSchema parses MANAGE entity actions for debts, categories and groups", () => {
+  const turn = modelTurnSchema.parse({
+    intent: "MANAGE",
+    entityActions: [
+      { entity: "DEBT", kind: "CREATE", partyName: "Ramesh", type: "TAKEN", amount: "25k" },
+      { entity: "CATEGORY", kind: "UPDATE", targetId: "cat_1", name: "Dining" },
+      { entity: "GROUP", kind: "DELETE", targetId: "grp_1" },
+    ],
+  });
+
+  assert.equal(turn.entityActions[0]?.amount, 25000);
+  assert.equal(turn.entityActions[0]?.confidence, 0.5);
+  assert.equal(turn.entityActions.length, 3);
+  assert.equal(turn.entityQuery, null);
+});
+
+test("modelTurnSchema parses entity queries", () => {
+  const turn = modelTurnSchema.parse({
+    intent: "QUERY",
+    entityQuery: { entity: "DEBT", status: "ACTIVE", text: "Ramesh" },
+  });
+
+  assert.equal(turn.entityQuery?.entity, "DEBT");
+  assert.equal(turn.entityQuery?.limit, 10);
+});
+
+test("modelTurnSchema rejects unknown entities", () => {
+  assert.throws(() =>
+    modelTurnSchema.parse({
+      intent: "MANAGE",
+      entityActions: [{ entity: "BUDGET", kind: "CREATE", name: "Food" }],
+    }),
+  );
+});
+
+test("confirmSchema accepts entity items next to transactions", () => {
+  const parsed = confirmSchema.parse({
+    clientRequestId: "req-2",
+    items: [
+      { kind: "CREATE", amount: 450, categoryId: "cat_1", date: "2026-11-21" },
+      {
+        kind: "ENTITY",
+        entity: "DEBT",
+        action: "CREATE",
+        partyName: "Ramesh",
+        type: "TAKEN",
+        amount: 25000,
+        date: "2026-11-21",
+      },
+      { kind: "ENTITY", entity: "CATEGORY", action: "DELETE", targetId: "cat_2" },
+    ],
+  });
+
+  assert.equal(parsed.items.length, 3);
+});
+
 test("statementRowsSchema validates rows and defaults confidence", () => {
   const parsed = statementRowsSchema.parse({
     rows: [{ date: "2026-11-01", amount: 450, description: "UPI/SWIGGY" }],

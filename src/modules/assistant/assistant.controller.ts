@@ -247,7 +247,10 @@ export async function confirm(req: Request, res: Response, next: NextFunction): 
           item.kind === "CREATE" && item.proposalId ? [item.proposalId] : [],
         );
         const savedOperationIds = input.items.flatMap((item) =>
-          item.kind !== "CREATE" && item.operationId ? [item.operationId] : [],
+          item.kind === "UPDATE" || item.kind === "DELETE" ? (item.operationId ? [item.operationId] : []) : [],
+        );
+        const savedActionIds = input.items.flatMap((item) =>
+          item.kind === "ENTITY" && item.actionId ? [item.actionId] : [],
         );
 
         await prisma.assistantMessage.update({
@@ -262,6 +265,10 @@ export async function confirm(req: Request, res: Response, next: NextFunction): 
               savedOperationIds: [
                 ...((turn.savedOperationIds as string[] | undefined) ?? []),
                 ...savedOperationIds,
+              ],
+              savedActionIds: [
+                ...((turn.savedActionIds as string[] | undefined) ?? []),
+                ...savedActionIds,
               ],
               savedBatchId: result.batchId,
             },

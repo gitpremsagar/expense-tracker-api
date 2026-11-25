@@ -204,6 +204,290 @@ async function main() {
   assert.equal(deleteConfirm.deleted, 1);
   await request(`/assistant/actions/${deleteConfirm.batchId}/undo`, { method: "POST" });
 
+  console.log("6b. debts, categories and groups");
+  const debtTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "I borrowed 25,000 from Ramesh today" },
+  });
+  assert.equal(debtTurn.turn.intent, "MANAGE");
+  assert.equal(debtTurn.turn.entityActions.length, 1);
+  const debtAction = debtTurn.turn.entityActions[0];
+  assert.equal(debtAction.entity, "DEBT");
+  assert.equal(debtAction.kind, "CREATE");
+
+  const debtConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: debtTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "DEBT",
+          action: "CREATE",
+          partyName: debtAction.after.partyName,
+          amount: debtAction.after.amount,
+          type: debtAction.after.type,
+          date: debtAction.after.date,
+          actionId: debtAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(debtConfirm.entityCreated, 1);
+  assert.equal(debtConfirm.entities[0].entity, "DEBT");
+
+  const debts = await request("/debts");
+  const ramesh = debts.debts.find((debt) => debt.partyName === "Ramesh");
+  assert.ok(ramesh, "expected the debt to be saved");
+  assert.equal(ramesh.outstanding, 25000);
+
+  const savedDebtMessage = await request(`/assistant/threads/${threadId}`);
+  assert.ok(
+    savedDebtMessage.messages
+      .find((message) => message.id === debtTurn.messageId)
+      ?.turn?.savedActionIds?.includes(debtAction.actionId),
+    "expected the entity action to be marked as saved",
+  );
+
+  const renameTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "rename the groceries category to Provisions" },
+  });
+  assert.equal(renameTurn.turn.entityActions.length, 1);
+  const renameAction = renameTurn.turn.entityActions[0];
+  assert.equal(renameAction.entity, "CATEGORY");
+  assert.equal(renameAction.kind, "UPDATE");
+
+  const renameConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: renameTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "CATEGORY",
+          action: "UPDATE",
+          targetId: renameAction.targetId,
+          name: renameAction.changes.name,
+          actionId: renameAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(renameConfirm.entityUpdated, 1);
+
+  const renamedCategories = await request("/categories");
+  assert.ok(renamedCategories.categories.some((category) => category.name === "Provisions"));
+
+  const categoryCreateTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "add a Pets category for expenses" },
+  });
+  const categoryCreateAction = categoryCreateTurn.turn.entityActions[0];
+  const categoryCreateConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: categoryCreateTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "CATEGORY",
+          action: "CREATE",
+          name: categoryCreateAction.after.name,
+          type: categoryCreateAction.after.type,
+          actionId: categoryCreateAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(categoryCreateConfirm.entityCreated, 1);
+
+  const categoryDeleteTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "delete the Pets category" },
+  });
+  const categoryDeleteAction = categoryDeleteTurn.turn.entityActions[0];
+  assert.equal(categoryDeleteAction.kind, "DELETE");
+  const categoryDeleteConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: categoryDeleteTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "CATEGORY",
+          action: "DELETE",
+          targetId: categoryDeleteAction.targetId,
+          actionId: categoryDeleteAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(categoryDeleteConfirm.entityDeleted, 1);
+
+  const afterCategoryDelete = await request("/categories");
+  assert.equal(afterCategoryDelete.categories.some((category) => category.name === "Pets"), false);
+
+  const categoryUndo = await request(`/assistant/actions/${categoryDeleteConfirm.batchId}/undo`, {
+    method: "POST",
+  });
+  assert.equal(categoryUndo.restored, 1);
+  const afterCategoryUndo = await request("/categories");
+  assert.ok(afterCategoryUndo.categories.some((category) => category.name === "Pets"));
+
+  const debtUpdateTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "increase the Ramesh loan to 30,000" },
+  });
+  const debtUpdateAction = debtUpdateTurn.turn.entityActions[0];
+  assert.equal(debtUpdateAction.kind, "UPDATE");
+  assert.equal(debtUpdateAction.changes.amount, 30000);
+
+  const debtUpdateConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: debtUpdateTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "DEBT",
+          action: "UPDATE",
+          targetId: debtUpdateAction.targetId,
+          amount: 30000,
+          actionId: debtUpdateAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(debtUpdateConfirm.entityUpdated, 1);
+
+  const updatedDebts = await request("/debts");
+  assert.equal(
+    updatedDebts.debts.find((debt) => debt.id === ramesh.id)?.outstanding,
+    30000,
+  );
+
+  await request(`/assistant/actions/${debtUpdateConfirm.batchId}/undo`, { method: "POST" });
+  const revertedDebts = await request("/debts");
+  assert.equal(
+    revertedDebts.debts.find((debt) => debt.id === ramesh.id)?.outstanding,
+    25000,
+  );
+
+  const groupTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "create a Household group for expenses" },
+  });
+  assert.equal(groupTurn.turn.entityActions[0].entity, "GROUP");
+  const groupAction = groupTurn.turn.entityActions[0];
+  const groupConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: groupTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "GROUP",
+          action: "CREATE",
+          name: groupAction.after.name,
+          type: groupAction.after.type,
+          actionId: groupAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(groupConfirm.entityCreated, 1);
+
+  const groups = await request("/category-groups");
+  const household = groups.groups.find((group) => group.name === "Household");
+  assert.ok(household, "expected the group to be saved");
+
+  const groupRenameTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "rename the Household group" },
+  });
+  const groupRenameAction = groupRenameTurn.turn.entityActions[0];
+  assert.equal(groupRenameAction.kind, "UPDATE");
+  const groupRenameConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: groupRenameTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "GROUP",
+          action: "UPDATE",
+          targetId: groupRenameAction.targetId,
+          name: "Home",
+          actionId: groupRenameAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(groupRenameConfirm.entityUpdated, 1);
+
+  const renamedGroups = await request("/category-groups");
+  assert.ok(renamedGroups.groups.some((group) => group.id === household.id && group.name === "Home"));
+
+  const owedTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "how much do I owe Ramesh?" },
+  });
+  assert.equal(owedTurn.turn.intent, "QUERY");
+  assert.ok(owedTurn.turn.entityQueryResult);
+  assert.equal(owedTurn.turn.entityQueryResult.entity, "DEBT");
+  assert.ok(owedTurn.turn.entityQueryResult.takenOutstanding >= 25000);
+
+  const groupDeleteTurn = await request(`/assistant/threads/${threadId}/messages`, {
+    method: "POST",
+    body: { text: "delete the Home group" },
+  });
+  const groupDeleteAction = groupDeleteTurn.turn.entityActions[0];
+  assert.equal(groupDeleteAction.kind, "DELETE");
+  const groupDeleteConfirm = await request("/assistant/actions/confirm", {
+    method: "POST",
+    body: {
+      clientRequestId: crypto.randomUUID(),
+      threadId,
+      messageId: groupDeleteTurn.messageId,
+      items: [
+        {
+          kind: "ENTITY",
+          entity: "GROUP",
+          action: "DELETE",
+          targetId: groupDeleteAction.targetId,
+          actionId: groupDeleteAction.actionId,
+        },
+      ],
+    },
+  });
+  assert.equal(groupDeleteConfirm.entityDeleted, 1);
+
+  const afterGroupDelete = await request("/category-groups");
+  assert.equal(afterGroupDelete.groups.some((group) => group.id === household.id), false);
+
+  await request(`/assistant/actions/${groupDeleteConfirm.batchId}/undo`, { method: "POST" });
+  const afterGroupUndo = await request("/category-groups");
+  assert.ok(afterGroupUndo.groups.some((group) => group.id === household.id));
+
+  await request(`/assistant/actions/${debtConfirm.batchId}/undo`, { method: "POST" });
+  const afterDebtUndo = await request("/debts");
+  assert.equal(afterDebtUndo.debts.some((debt) => debt.id === ramesh.id), false);
+
   console.log("7. bill photo");
   const imageForm = new FormData();
   imageForm.append("kind", "IMAGE");

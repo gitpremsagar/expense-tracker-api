@@ -28,6 +28,35 @@ function candidateId(system) {
   return section.match(/-\s+(c[a-z0-9]+)\s+\|/i)?.[1] ?? null;
 }
 
+function sectionOf(system, heading) {
+  const parts = system.split(heading);
+  return (parts[1] ?? "").split("\n\n")[0] ?? "";
+}
+
+function categoryByName(system, name) {
+  for (const line of system.split("\n")) {
+    const match = line.match(/^\s*-\s+(c[a-z0-9]+)\s+\|\s+(.+?)(?:\s+\|\s+group:.*)?$/i);
+    if (match && match[2].trim().toLowerCase() === name.toLowerCase()) return match[1];
+  }
+  return null;
+}
+
+function groupByName(system, name) {
+  for (const line of sectionOf(system, "USER CATEGORY GROUPS").split("\n")) {
+    const match = line.match(/^-\s+(c[a-z0-9]+)\s+\|\s+(.+?)\s+\|\s+(\w+)/i);
+    if (match && match[2].trim().toLowerCase() === name.toLowerCase()) return match[1];
+  }
+  return null;
+}
+
+function debtByParty(system, party) {
+  for (const line of sectionOf(system, "DEBTS").split("\n")) {
+    const match = line.match(/^-\s+(c[a-z0-9]+)\s+\|\s+(\w+)\s+\|\s+(.+?)\s+\|/i);
+    if (match && match[3].trim().toLowerCase() === party.toLowerCase()) return match[1];
+  }
+  return null;
+}
+
 function reply(payload) {
   return JSON.stringify(payload);
 }
@@ -122,6 +151,159 @@ const server = http.createServer(async (req, res) => {
           },
         ],
         operations: [],
+        query: null,
+        clarifications: [],
+      });
+      return;
+    }
+
+    if (text.includes("do i owe") || text.includes("owe me") || text.includes("debts")) {
+      respond({
+        intent: "QUERY",
+        reply: "Here is what I found.",
+        proposals: [],
+        operations: [],
+        entityActions: [],
+        entityQuery: {
+          entity: "DEBT",
+          status: "ACTIVE",
+          ...(text.includes("ramesh") ? { text: "Ramesh" } : {}),
+        },
+        query: null,
+        clarifications: [],
+      });
+      return;
+    }
+
+    if (text.includes("borrowed") || text.includes("lent")) {
+      const given = text.includes("lent");
+      respond({
+        intent: "MANAGE",
+        reply: "Please confirm this debt.",
+        proposals: [],
+        operations: [],
+        entityActions: [
+          {
+            entity: "DEBT",
+            kind: "CREATE",
+            partyName: given ? "Priya" : "Ramesh",
+            type: given ? "GIVEN" : "TAKEN",
+            amount: 25000,
+            date,
+            confidence: 0.95,
+          },
+        ],
+        query: null,
+        clarifications: [],
+      });
+      return;
+    }
+
+    if (text.includes("rename") && text.includes("categor")) {
+      const targetId = categoryByName(system, "Groceries");
+      respond({
+        intent: targetId ? "MANAGE" : "CLARIFY",
+        reply: targetId ? "Please confirm this rename." : "Which category should I rename?",
+        proposals: [],
+        operations: [],
+        entityActions: targetId
+          ? [{ entity: "CATEGORY", kind: "UPDATE", targetId, name: "Provisions", confidence: 0.9 }]
+          : [],
+        query: null,
+        clarifications: targetId ? [] : ["Which category should I rename?"],
+      });
+      return;
+    }
+
+    if (text.includes("pets categor")) {
+      const targetId = categoryByName(system, "Pets");
+
+      if (text.includes("delete")) {
+        respond({
+          intent: targetId ? "MANAGE" : "CLARIFY",
+          reply: targetId ? "Please confirm this deletion." : "Which category should I delete?",
+          proposals: [],
+          operations: [],
+          entityActions: targetId
+            ? [{ entity: "CATEGORY", kind: "DELETE", targetId, confidence: 0.9 }]
+            : [],
+          query: null,
+          clarifications: targetId ? [] : ["Which category should I delete?"],
+        });
+        return;
+      }
+
+      respond({
+        intent: "MANAGE",
+        reply: "Please confirm this category.",
+        proposals: [],
+        operations: [],
+        entityActions: [
+          { entity: "CATEGORY", kind: "CREATE", name: "Pets", type: "EXPENSE", confidence: 0.9 },
+        ],
+        query: null,
+        clarifications: [],
+      });
+      return;
+    }
+
+    if (text.includes("increase") && text.includes("ramesh")) {
+      const targetId = debtByParty(system, "Ramesh");
+      respond({
+        intent: targetId ? "MANAGE" : "CLARIFY",
+        reply: targetId ? "Please confirm this change." : "Which debt should I change?",
+        proposals: [],
+        operations: [],
+        entityActions: targetId
+          ? [{ entity: "DEBT", kind: "UPDATE", targetId, amount: 30000, confidence: 0.9 }]
+          : [],
+        query: null,
+        clarifications: targetId ? [] : ["Which debt should I change?"],
+      });
+      return;
+    }
+
+    if (text.includes("household group") || text.includes("home group")) {
+      const targetId = groupByName(system, "Household") ?? groupByName(system, "Home");
+
+      if (text.includes("rename")) {
+        respond({
+          intent: targetId ? "MANAGE" : "CLARIFY",
+          reply: targetId ? "Please confirm this rename." : "Which group should I rename?",
+          proposals: [],
+          operations: [],
+          entityActions: targetId
+            ? [{ entity: "GROUP", kind: "UPDATE", targetId, name: "Home", confidence: 0.9 }]
+            : [],
+          query: null,
+          clarifications: targetId ? [] : ["Which group should I rename?"],
+        });
+        return;
+      }
+
+      if (text.includes("delete")) {
+        respond({
+          intent: targetId ? "MANAGE" : "CLARIFY",
+          reply: targetId ? "Please confirm this deletion." : "Which group should I delete?",
+          proposals: [],
+          operations: [],
+          entityActions: targetId
+            ? [{ entity: "GROUP", kind: "DELETE", targetId, confidence: 0.9 }]
+            : [],
+          query: null,
+          clarifications: targetId ? [] : ["Which group should I delete?"],
+        });
+        return;
+      }
+
+      respond({
+        intent: "MANAGE",
+        reply: "Please confirm this group.",
+        proposals: [],
+        operations: [],
+        entityActions: [
+          { entity: "GROUP", kind: "CREATE", name: "Household", type: "EXPENSE", confidence: 0.9 },
+        ],
         query: null,
         clarifications: [],
       });

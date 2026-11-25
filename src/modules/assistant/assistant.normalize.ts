@@ -3,10 +3,15 @@ import type { CategoryType } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { env } from "../../config/env.js";
 import { dateKey, roundMoney } from "../../utils/date.js";
-import type { AssistantCategory } from "./assistant.prompt.js";
+import type { AssistantCategory, AssistantGroup, AssistantDebt } from "./assistant.prompt.js";
 import type { ModelTurn, QuerySpec } from "./assistant.schema.js";
 import { isDateInRange, normalizeDateValue } from "./assistant.time.js";
 import type { TransactionSnapshot } from "./assistant.actions.js";
+import {
+  normalizeEntityActions,
+  type AssistantEntityAction,
+  type EntityQueryResult,
+} from "./assistant.entities.js";
 
 export type AssistantProposal = {
   proposalId: string;
@@ -41,11 +46,15 @@ export type AssistantTurn = {
   reply: string;
   proposals: AssistantProposal[];
   operations: AssistantOperation[];
+  entityActions: AssistantEntityAction[];
   query: QuerySpec | null;
   queryResult: unknown | null;
+  entityQuery: ModelTurn["entityQuery"];
+  entityQueryResult: EntityQueryResult | null;
   clarifications: string[];
   savedProposalIds?: string[];
   savedOperationIds?: string[];
+  savedActionIds?: string[];
   savedBatchId?: string;
 };
 
@@ -59,6 +68,8 @@ export async function normalizeTurn(input: {
   turn: ModelTurn;
   userId: string;
   categories: AssistantCategory[];
+  groups: AssistantGroup[];
+  debts: AssistantDebt[];
   timeZone: string;
   source: "TEXT" | "IMAGE" | "AUDIO";
 }): Promise<AssistantTurn> {
@@ -222,11 +233,23 @@ export async function normalizeTurn(input: {
     };
   }
 
+  const entityResult = await normalizeEntityActions({
+    actions: input.turn.entityActions,
+    userId: input.userId,
+    timeZone: input.timeZone,
+    categories: input.categories,
+    groups: input.groups,
+    debts: input.debts,
+  });
+  const entityActions = entityResult.actions;
+  clarifications.push(...entityResult.clarifications);
+
   let intent = input.turn.intent;
   if (
     (intent === "CREATE" && proposals.length === 0) ||
     ((intent === "UPDATE" || intent === "DELETE") && operations.length === 0) ||
-    (intent === "QUERY" && !query)
+    (intent === "QUERY" && !query && !input.turn.entityQuery) ||
+    (intent === "MANAGE" && entityActions.length === 0 && !input.turn.entityQuery)
   ) {
     intent = "CLARIFY";
   }
@@ -237,19 +260,24 @@ export async function normalizeTurn(input: {
       ? clarifications[0] ?? "Could you tell me a little more?"
       : intent === "CREATE"
         ? "Here is what I understood. Please check and save."
-        : intent === "UPDATE" || intent === "DELETE"
-          ? "Please confirm this change."
-          : intent === "QUERY"
-            ? "Here is what I found."
-            : "I could not help with that.");
+        : intent === "MANAGE"
+          ? "Please confirm these changes."
+          : intent === "UPDATE" || intent === "DELETE"
+            ? "Please confirm this change."
+            : intent === "QUERY"
+              ? "Here is what I found."
+              : "I could not help with that.");
 
   return {
     intent,
     reply,
     proposals,
     operations,
+    entityActions,
     query,
     queryResult: null,
+    entityQuery: input.turn.entityQuery,
+    entityQueryResult: null,
     clarifications: clarifications.slice(0, 5),
   };
 }

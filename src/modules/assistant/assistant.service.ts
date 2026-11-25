@@ -9,12 +9,13 @@ import {
   type ChatMessage,
   type ReasoningEffort,
 } from "../../lib/deepseek.js";
-import { loadAssistantContext, loadCategories } from "./assistant.context.js";
+import { loadAssistantContext } from "./assistant.context.js";
 import { buildTurnSystemPrompt, BILL_INSTRUCTION } from "./assistant.prompt.js";
 import { modelTurnSchema, type ConfirmItem } from "./assistant.schema.js";
 import { todayInTimezone, resolveTimezone } from "./assistant.time.js";
 import { normalizeTurn, type AssistantTurn } from "./assistant.normalize.js";
 import { composeQueryReply, runQuery } from "./assistant.query.js";
+import { composeEntityQueryReply, runEntityQuery } from "./assistant.entities.js";
 import { confirmActions, type ConfirmResult } from "./assistant.actions.js";
 import { assertConsent, getPreference } from "./assistant.preferences.js";
 import { appendMessage, ensureThread, getThread } from "./assistant.threads.js";
@@ -167,7 +168,10 @@ export async function parseTextTurn(input: {
 
   const timeZone = resolveTimezone(input.timezone ?? preference.timezone);
   const thread = await ensureThread(input.userId, input.threadId, text);
-  const { categories, candidates } = await loadAssistantContext(input.userId, timeZone);
+  const { categories, groups, debts, candidates } = await loadAssistantContext(
+    input.userId,
+    timeZone,
+  );
   const history = await recentHistory(thread.id, input.userId);
 
   await appendMessage(input.userId, thread.id, {
@@ -182,6 +186,8 @@ export async function parseTextTurn(input: {
       today: todayInTimezone(timeZone),
       timeZone,
       categories,
+      groups,
+      debts,
       candidates,
     }),
   };
@@ -222,7 +228,10 @@ export async function parseImageTurn(input: {
   const image = await validateImage(input.buffer);
   const timeZone = resolveTimezone(input.timezone ?? preference.timezone);
   const thread = await ensureThread(input.userId, input.threadId, "Bill photo");
-  const { categories, candidates } = await loadAssistantContext(input.userId, timeZone);
+  const { categories, groups, debts, candidates } = await loadAssistantContext(
+    input.userId,
+    timeZone,
+  );
   const history = await recentHistory(thread.id, input.userId);
 
   await appendMessage(input.userId, thread.id, {
@@ -243,6 +252,8 @@ export async function parseImageTurn(input: {
       today: todayInTimezone(timeZone),
       timeZone,
       categories,
+      groups,
+      debts,
       candidates,
     }),
   };
@@ -292,11 +303,13 @@ async function finalizeTurn(input: {
   model: string;
   autoSave: boolean;
 }): Promise<TurnResponse> {
-  const categories = await loadCategories(input.userId);
+  const { categories, groups, debts } = await loadAssistantContext(input.userId, input.timeZone);
   const turn = await normalizeTurn({
     turn: input.modelTurn,
     userId: input.userId,
     categories,
+    groups,
+    debts,
     timeZone: input.timeZone,
     source: input.source,
   });
@@ -305,6 +318,12 @@ async function finalizeTurn(input: {
     const result = await runQuery(input.userId, turn.query, input.timeZone);
     turn.queryResult = result;
     turn.reply = composeQueryReply(result, turn.query, input.timeZone);
+  }
+
+  if (turn.entityQuery) {
+    const result = await runEntityQuery(input.userId, turn.entityQuery);
+    turn.entityQueryResult = result;
+    turn.reply = composeEntityQueryReply(result);
   }
 
   let autoSaved: ConfirmResult | null = null;

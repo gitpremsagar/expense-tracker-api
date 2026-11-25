@@ -60,6 +60,35 @@ export const operationSchema = z.object({
   confidence: z.number().min(0).max(1).optional().default(0.5),
 });
 
+export const entityNameSchema = z.enum(["DEBT", "CATEGORY", "GROUP"]);
+
+export const entityActionSchema = z.object({
+  actionId: z.string().optional(),
+  entity: entityNameSchema,
+  kind: z.enum(["CREATE", "UPDATE", "DELETE"]),
+  targetId: z.string().optional(),
+  confidence: z.number().min(0).max(1).optional().default(0.5),
+  // Debt fields
+  partyName: z.string().max(200).optional(),
+  amount: numberish.optional(),
+  description: z.string().max(500).nullable().optional(),
+  // Debt direction ("TAKEN" | "GIVEN") or category type for categories/groups
+  type: z.string().max(20).optional(),
+  // Category and group fields
+  name: z.string().max(60).optional(),
+  groupId: z.string().nullable().optional(),
+  groupName: z.string().max(60).nullable().optional(),
+  date: dateish.optional(),
+});
+
+export const entityQuerySchema = z.object({
+  entity: entityNameSchema,
+  status: z.enum(["ACTIVE", "SETTLED"]).optional(),
+  type: z.string().max(20).optional(),
+  text: z.string().max(100).optional(),
+  limit: z.number().int().positive().max(25).optional().default(10),
+});
+
 export const queryFiltersSchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
@@ -77,10 +106,21 @@ export const querySpecSchema = z.object({
 });
 
 export const modelTurnSchema = z.object({
-  intent: z.enum(["CREATE", "UPDATE", "DELETE", "QUERY", "IMPORT", "CLARIFY", "UNSUPPORTED"]),
+  intent: z.enum([
+    "CREATE",
+    "UPDATE",
+    "DELETE",
+    "QUERY",
+    "IMPORT",
+    "MANAGE",
+    "CLARIFY",
+    "UNSUPPORTED",
+  ]),
   reply: z.string().max(1_500).optional().default(""),
   proposals: z.array(proposalSchema).max(20).optional().default([]),
   operations: z.array(operationSchema).max(20).optional().default([]),
+  entityActions: z.array(entityActionSchema).max(10).optional().default([]),
+  entityQuery: entityQuerySchema.nullable().optional().default(null),
   query: querySpecSchema.nullable().optional().default(null),
   clarifications: z.array(z.string().max(300)).max(5).optional().default([]),
 });
@@ -88,6 +128,8 @@ export const modelTurnSchema = z.object({
 export type ModelTurn = z.infer<typeof modelTurnSchema>;
 export type ModelProposal = z.infer<typeof proposalSchema>;
 export type ModelOperation = z.infer<typeof operationSchema>;
+export type ModelEntityAction = z.infer<typeof entityActionSchema>;
+export type EntityQuerySpec = z.infer<typeof entityQuerySchema>;
 export type QuerySpec = z.infer<typeof querySpecSchema>;
 
 export const parseMessageSchema = z.object({
@@ -131,10 +173,26 @@ export const confirmDeleteItemSchema = z.object({
   operationId: z.string().optional(),
 });
 
+export const confirmEntityItemSchema = z.object({
+  kind: z.literal("ENTITY"),
+  entity: entityNameSchema,
+  action: z.enum(["CREATE", "UPDATE", "DELETE"]),
+  targetId: z.string().optional(),
+  partyName: z.string().trim().min(1).max(200).optional(),
+  amount: z.number().positive().optional(),
+  description: z.string().max(500).nullable().optional(),
+  type: z.union([z.enum(["TAKEN", "GIVEN"]), categoryTypeSchema]).optional(),
+  name: z.string().trim().min(1).max(50).optional(),
+  groupId: z.string().nullable().optional(),
+  date: z.string().min(4).optional(),
+  actionId: z.string().optional(),
+});
+
 export const confirmItemSchema = z.discriminatedUnion("kind", [
   confirmCreateItemSchema,
   confirmUpdateItemSchema,
   confirmDeleteItemSchema,
+  confirmEntityItemSchema,
 ]);
 
 export const confirmSchema = z.object({
